@@ -3,7 +3,10 @@ meme
 
 MEME - EM algorithm of HMM for motif finding [for study]
 
-** Usage **
+**Usage**
+
     $ make
+
     $ ./meme data/sample.fasta 4
+
     HOGE
