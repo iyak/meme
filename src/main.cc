@@ -19,6 +19,7 @@ std::vector<T> operator* (std::vector<T> const &v, double const s)
         u[i] = v[i] * s;
     return u;
 }
+
 struct Meme
 {
     std::vector<std::string> seqs; /* sequences */
@@ -37,11 +38,11 @@ struct Meme
         model.resize(ml + 1);
         std::fill_n(model.begin(), ml + 1, std::vector<double>(nalph, 1.0 / nalph));
     }
-    double logsum(double const x, double const y) /* more strict log sum than naive */
+    double logsum(double const x, double const y) /* more strict log(sum(exp..)) than naive */
     {
         if (-INFINITY == y)
             return x;
-        return x < y ? y + log1p(exp(x - y)) : x + log1p(exp(y - x));
+        return x < y ? y + std::log1p(exp(x - y)) : x + std::log1p(exp(y - x));
     }
     void computeForwardBackward(std::vector<int> &s)
     {
@@ -51,39 +52,39 @@ struct Meme
         for (size_t i = 1; i <= s.size(); ++ i)
             for (int j = 0; j <= mlen + 1; ++ j)
                 if (0 == j)
-                    forward[i][j] = forward[i - 1][j] + model[0][s[i - 1]];
+                    forward[i][j] = forward[i - 1][j] + log(model[0][s[i - 1]]);
                 else if (1 <= j && j <= mlen)
-                    forward[i][j] = forward[i - 1][j - 1] + model[j][s[i - 1]];
+                    forward[i][j] = forward[i - 1][j - 1] + log(model[j][s[i - 1]]);
                 else /* mlen + 1 == j */
-                    forward[i][j] = logsum(forward[i - 1][j] + model[0][s[i - 1]], forward[i][j - 1]);
+                    forward[i][j] = logsum(forward[i - 1][j], forward[i - 1][j - 1]) + log(model[0][s[i - 1]]);
         backward.resize(s.size() + 1);
         std::fill_n(backward.begin(), s.size() + 1, std::vector<double>(mlen + 2, -INFINITY));
         backward[s.size()] = std::vector<double>(mlen + 2, .0); /* any state in the end */
         for (int i = s.size() - 1; i >= 0; -- i)
             for (int j = mlen + 1; j >= 0; -- j)
-                if (mlen + 1 == j)
-                    backward[i][j] = model[0][s[i]] + backward[i + 1][j];
-                else if (1 <= j && j <= mlen)
-                    backward[i][j] = model[j][s[i]] + backward[i + 1][j + 1];
+                if (mlen <= j)
+                    backward[i][j] = backward[i + 1][mlen + 1] + log(model[0][s[i]]);
+                else if (1 <= j && j < mlen)
+                    backward[i][j] = backward[i + 1][j + 1] + log(model[j + 1][s[i]]);
                 else /* 0 == j */
-                    backward[i][j] = logsum(model[0][s[i]] + backward[i + 1][j], backward[i][j + 1]);
+                    backward[i][j] = logsum(backward[i + 1][j] + log(model[0][s[i]]), backward[i + 1][j + 1] + log(model[j + 1][s[i]]));
     }
     void addExpCountMeme(std::vector<int> const &s, d_mat &cv)
     {
         std::vector<double> null0(nalph, .0);
         for (size_t i = 0; i < s.size(); ++ i)
-            ++ null0[s[i]]; /* base of null model */
+            null0[s[i]] += 1.0; /* base of null model */
         for (size_t i = 0; i <= s.size() - mlen; ++ i) {
-            double pr_m = exp(forward[i][1] + backward[i][1] - forward[s.size()][mlen + 1]); /* prob that motif begins at i */
+            double pr_m = exp(forward[i + 1][1] + backward[i + 1][1] - forward[s.size()][mlen + 1]); /* prob that motif begins at i */
             std::vector<double> null = null0;
             for (int j = 0; j < mlen; ++ j)
-                -- null[s[i + j]]; /* exclude inside of motif from null model */
+                null[s[i + j]] -= 1.0; /* exclude inside of motif from null model */
             cv[0] += null * pr_m;
             for (int j = 0; j < mlen; ++ j)
                 cv[j + 1][s[i + j]] += pr_m;
         }
     }
-    d_mat computeExpectationMeme(double const pseudocount)
+    d_mat computeExpectation(double const pseudocount)
     {
         d_mat cv(mlen + 1, std::vector<double>(nalph, pseudocount)); /* initial value is as pseudocount */
         for (size_t i = 0; i < seqs.size(); ++ i) {
@@ -94,7 +95,7 @@ struct Meme
     }
     d_mat solveEmMstep(d_mat &motif)
     {
-        for (int i = 0; i < mlen; ++ i) {
+        for (int i = 0; i <= mlen; ++ i) {
             double z = .0;
             for (int c = 0; c < nalph; ++ c)
                 z += motif[i][c];
@@ -114,7 +115,7 @@ struct Meme
     void trainEm(double const eps, int maxIt, double const pseudocount)
     {
         while (maxIt --) { /* no limit (but overflow) with negative maxIt */
-            d_mat cv = computeExpectationMeme(pseudocount);
+            d_mat cv = computeExpectation(pseudocount);
             d_mat modelNew = solveEmMstep(cv);
             if (dif(model, modelNew) < eps)
                 break;
