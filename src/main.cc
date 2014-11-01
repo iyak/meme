@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <fstream>
+#include <algorithm>
 typedef std::vector<std::vector<double> > d_mat;
 
     template <typename T>
@@ -24,7 +25,7 @@ struct Meme
 {
     std::vector<std::string> seqs; /* sequences */
     std::vector<std::vector<int>> nseqs; /* integer form sequence */
-    std::string alphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::string const alphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     int mlen, nalph = alphs.size();/* length of motif, number of alphabets */
     d_mat model, forward, backward;
     Meme(std::vector<std::string> const &s, int const ml): seqs(s), mlen(ml)
@@ -32,8 +33,7 @@ struct Meme
         nseqs.resize(s.size());
         for (size_t i = 0; i < s.size(); ++ i) {
             nseqs[i].resize(seqs[i].size());
-            for (size_t j = 0; j < s[i].size(); ++ j)
-                nseqs[i][j] = alphs.find(s[i][j]);
+            std::transform(s[i].begin(), s[i].end(), nseqs[i].begin(), [&] (char c) {return alphs.find(c);});
         }
         model.resize(ml + 1);
         std::fill_n(model.begin(), ml + 1, std::vector<double>(nalph, 1.0 / nalph));
